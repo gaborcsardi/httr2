@@ -1,6 +1,7 @@
-request_test <- function(template = "/get", ...) {
+request_test <- function(template = "/get", ..., .options = list()) {
   req <- request(example_url())
   req <- req_template(req, template, ..., .env = caller_env())
+  req <- req_options(req, !!!.options)
   req
 }
 
