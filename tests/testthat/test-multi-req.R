@@ -10,14 +10,13 @@ test_that("correctly prepares request", {
 
 test_that("requests happen in parallel", {
   # test works best if webfakes has ample threads and keepalive
-  opts <-list(pipewait = FALSE)
   reqs <- list2(
-    request_test("/delay/:secs", secs = 0, .options = opts),
-    request_test("/delay/:secs", secs = 0.25, .options = opts),
-    request_test("/delay/:secs", secs = 0.25, .options = opts),
-    request_test("/delay/:secs", secs = 0.25, .options = opts),
-    request_test("/delay/:secs", secs = 0.25, .options = opts),
-    request_test("/delay/:secs", secs = 0.25, .options = opts),
+    request_test("/delay/:secs", secs = 0),
+    request_test("/delay/:secs", secs = 0.25),
+    request_test("/delay/:secs", secs = 0.25),
+    request_test("/delay/:secs", secs = 0.25),
+    request_test("/delay/:secs", secs = 0.25),
+    request_test("/delay/:secs", secs = 0.25),
   )
   time <- system.time(req_perform_parallel(reqs))
   expect_lt(time[[3]], 1)
