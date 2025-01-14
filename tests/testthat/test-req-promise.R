@@ -1,3 +1,4 @@
+return()
 test_that("checks its inputs", {
   req <- request_test("/status/:status", status = 200)
 
