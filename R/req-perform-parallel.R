@@ -88,6 +88,10 @@ req_perform_parallel <- function(
     error_call = environment()
   )
 
+  if (has_otel()) {
+    otel::start_span("httr2::req_perform_parallel")
+  }
+
   tryCatch(
     queue$process(),
     interrupt = function(cnd) {

@@ -20,6 +20,18 @@ otel_req_start <- function(
   req
 }
 
+otel_pooled_req_start <- function(name, req, ..., scope = parent.frame()) {
+  req$otel_span <- otel::start_session(
+    name,
+    options = list(kind = "client"),
+    attributes = otel_req_attrs(req),
+    scope = scope,
+    ...
+  )
+  req <- req_headers(req, !!!otel::pack_http_context())
+  req
+}
+
 otel_req_attrs <- function(req, resend_count = 1) {
   parsed <- url_parse(req$url)
   if (!is.null(parsed$username)) {
