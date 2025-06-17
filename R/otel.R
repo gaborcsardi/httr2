@@ -43,12 +43,13 @@ otel_handle_resp <- function(req, resp) {
   if (is_error(resp)) {
     req$otel_span$record_exception(resp)
     req$otel_span$set_status("error")
-  }
-  req$otel_span$set_attribute("http.response.status_code", resp_status(resp))
-  if (error_is_error(req, resp)) {
-    req$otel_span$set_status("error", resp_status_desc(resp))
-    # The semantic conventions recommend using the status code as a string for
-    # these cases.
-    req$otel_span$set_attribute("error.type", as.character(resp_status(resp)))
+  } else {
+    req$otel_span$set_attribute("http.response.status_code", resp_status(resp))
+    if (error_is_error(req, resp)) {
+      req$otel_span$set_status("error", resp_status_desc(resp))
+      # The semantic conventions recommend using the status code as a string for
+      # these cases.
+      req$otel_span$set_attribute("error.type", as.character(resp_status(resp)))
+    }
   }
 }
