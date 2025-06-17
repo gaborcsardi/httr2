@@ -222,34 +222,90 @@ test_that("tracing works as expected", {
 
   spans <- otelsdk::with_otel_record({
     # A request with no URL (which shouldn't create a span).
-    try(req_perform(request("")), silent = TRUE)
+    expect_snapshot(try(req_perform(request("")), silent = TRUE))
+  })[["traces"]]
 
+  expect_equal(length(spans), 0)
+
+  spans <- otelsdk::with_otel_record({
     # A regular request.
     req_perform(request_test())
+  })[["traces"]]
 
+  expect_true("httr2::req_perform" %in% names(spans))
+  expect_true("httr2::req_perform1" %in% names(spans))
+
+  expect_equal(spans[["httr2::req_perform"]]$status, "ok")
+  attr <- spans[["httr2::req_perform"]]$attributes
+  expect_snapshot(sort(names(attr)))
+  expect_equal(attr$http.request.method, "GET")
+  expect_equal(attr$http.response.status_code, 200L)
+  expect_equal(attr$server.address, "127.0.0.1")
+  expect_match(attr$user_agent.original, "^httr2/")
+
+  spans <- otelsdk::with_otel_record({
     # A request with an HTTP error.
     try(
       req_perform(request_test("/status/:status", status = 404)),
       silent = TRUE
     )
+  })[["traces"]]
 
+  expect_true("httr2::req_perform" %in% names(spans))
+  expect_true("httr2::req_perform1" %in% names(spans))
+
+  expect_equal(spans[["httr2::req_perform"]]$status, "error")
+  expect_equal(spans[["httr2::req_perform"]]$description, "Not Found")
+  expect_equal(
+    spans[["httr2::req_perform"]]$attributes$http.response.status_code,
+    404L
+  )
+  expect_equal(spans[["httr2::req_perform"]]$attributes$error.type, "404")
+
+  spans <- otelsdk::with_otel_record({
     # A request with basic credentials that we should redact.
-    with_mocked_responses(
-      function(req) {
-        # Verify that the traceparent header is present when tracing while
-        # we're in here.
-        expect_false(is.null(req$headers$traceparent))
-        response(status_code = 200)
-      },
-      req_perform(request("https://test:test@example.com"))
-    )
+    parsed <- url_parse(example_url())
+    parsed$username <- "user"
+    parsed$password <- "secret"
+    url <- url_build(parsed)
+    request(url) %>% req_perform()
+  })[["traces"]]
 
+  expect_true("httr2::req_perform" %in% names(spans))
+  expect_true("httr2::req_perform1" %in% names(spans))
+
+  red <- c("server.address", "url.full")
+  expect_snapshot(
+    {
+      spans[["httr2::req_perform"]]$attributes[red]
+      spans[["httr2::req_perform1"]]$attributes[red]
+    },
+    transform = transform_port
+  )
+
+  spans <- otelsdk::with_otel_record({
+    resp <- request(example_url("/headers")) %>%
+      req_perform
+  })[["traces"]]
+
+  expect_true("traceparent" %in% names(resp_body_json(resp)[["headers"]]))
+
+  spans <- otelsdk::with_otel_record({
     # A request with a curl error.
     with_mocked_bindings(
       try(req_perform(request("http://127.0.0.1")), silent = TRUE),
       curl_fetch = function(...) abort("Failed to connect")
     )
+  })[["traces"]]
 
+  expect_true("httr2::req_perform" %in% names(spans))
+  expect_equal(spans[["httr2::req_perform"]]$status, "error")
+  expect_snapshot({
+    spans[["httr2::req_perform"]]$events[[1]]$name
+    spans[["httr2::req_perform"]]$events[[1]]$attributes$exception.type
+  })
+
+  spans <- otelsdk::with_otel_record({
     # A request that triggers retries, generating three individual spans.
     request_test("/status/:status", status = 429) %>%
       req_retry(max_tries = 3, backoff = ~0) %>%
@@ -257,56 +313,16 @@ test_that("tracing works as expected", {
       try(silent = TRUE)
   })[["traces"]]
 
-  expect_length(spans, 7L)
-
-  # Validate the span for regular requests.
-  expect_equal(spans[[1]]$status, "ok")
-  expect_named(
-    spans[[1]]$attributes,
-    c(
-      "http.response.status_code",
-      "user_agent.original",
-      "url.full",
-      "server.address",
-      "server.port",
-      "http.request.method"
-    )
-  )
-  expect_equal(spans[[1]]$attributes$http.request.method, "GET")
-  expect_equal(spans[[1]]$attributes$http.response.status_code, 200L)
-  expect_equal(spans[[1]]$attributes$server.address, "127.0.0.1")
-  expect_match(spans[[1]]$attributes$user_agent.original, "^httr2/")
-
-  # And for requests with HTTP errors.
-  expect_equal(spans[[2]]$status, "error")
-  expect_equal(spans[[2]]$description, "Not Found")
-  expect_equal(spans[[2]]$attributes$http.response.status_code, 404L)
-  expect_equal(spans[[2]]$attributes$error.type, "404")
-
-  # And for spans with redacted credentials.
-  expect_equal(spans[[3]]$attributes$server.address, "example.com")
-  expect_equal(spans[[3]]$attributes$server.port, 443L)
-  expect_equal(
-    spans[[3]]$attributes$url.full,
-    "https://REDACTED:REDACTED@example.com/"
-  )
-
-  # And for spans with curl errors.
-  expect_equal(spans[[4]]$status, "error")
-  expect_equal(spans[[4]]$attributes$error.type, "rlang_error")
-
-  # We should have attached the curl error as an event.
-  expect_length(spans[[4]]$events, 1L)
-  expect_equal(spans[[4]]$events[[1]]$name, "exception")
-
-  # For spans with retries, we expect the parent context to be the same for
-  # each span. (In this case, there is no parent span, so it should be empty.)
-  # It is important that they not be children of one another.
-  expect_equal(spans[[5]]$parent, "0000000000000000")
-  expect_equal(spans[[6]]$parent, "0000000000000000")
-  expect_equal(spans[[7]]$parent, "0000000000000000")
+  expect_equal(sum(names(spans) == "httr2::req_perform"), 1)
+  expect_equal(sum(names(spans) == "httr2::req_perform1"), 3)
+  parent <- spans[["httr2::req_perform"]]
+  subs <- spans[names(spans) == "httr2::req_perform1"]
+  expect_equal(subs[[1]]$parent, parent$span_id)
+  expect_equal(subs[[2]]$parent, parent$span_id)
+  expect_equal(subs[[3]]$parent, parent$span_id)
 
   # Verify that we set resend counts correctly.
-  expect_equal(spans[[6]]$attributes$http.request.resend_count, 2L)
-  expect_equal(spans[[7]]$attributes$http.request.resend_count, 3L)
+  subs <- subs[order(unlist(lapply(subs, "[[", "start_time")))]
+  expect_equal(subs[[2]]$attributes$http.request.resend_count, 2L)
+  expect_equal(subs[[3]]$attributes$http.request.resend_count, 3L)
 })
