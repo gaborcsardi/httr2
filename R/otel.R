@@ -25,7 +25,7 @@ otel_pooled_req_start <- function(name, req, ..., scope = parent.frame()) {
     name,
     options = list(kind = "client"),
     attributes = otel_req_attrs(req),
-    scope = scope,
+    session_scope = scope,
     ...
   )
   req <- req_headers(req, !!!otel::pack_http_context())
