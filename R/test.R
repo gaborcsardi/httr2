@@ -70,3 +70,7 @@ example_github_client <- function() {
     name = "hadley-oauth-test"
   )
 }
+
+transform_port <- function(x) {
+  x <- gsub(":[0-9]+/", ":<port>/", x)
+}

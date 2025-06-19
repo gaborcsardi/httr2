@@ -78,6 +78,10 @@ req_perform <- function(
 
   verbosity <- verbosity %||% httr2_verbosity()
 
+  if (has_otel()) {
+    req <- otel_req_start("httr2::req_perform", req)
+  }
+
   if (!is.null(mock)) {
     mock <- as_function(mock)
     mock_resp <- mock(req)
@@ -110,7 +114,7 @@ req_perform <- function(
     sys_sleep(delay, "for retry backoff")
     n <- n + 1
 
-    resp <- req_perform1(req, path = path, handle = handle)
+    resp <- req_perform1(req, path = path, handle = handle, resend_count = n)
     req_completed(req_prep)
 
     if (retry_is_transient(req, resp)) {
@@ -136,6 +140,10 @@ req_perform <- function(
 }
 
 handle_resp <- function(req, resp, error_call = caller_env()) {
+  if (has_otel()) {
+    otel_handle_resp(req, resp)
+  }
+
   if (resp_show_body(resp)) {
     verbose_body("<< ", resp$body, resp$headers$`content-type`)
   }
@@ -174,7 +182,10 @@ resp_failure_cnd <- function(req, resp, error_call = caller_env()) {
   ))
 }
 
-req_perform1 <- function(req, path = NULL, handle = NULL) {
+req_perform1 <- function(req, path = NULL, handle = NULL, resend_count = 1) {
+  if (has_otel()) {
+    otel_req_start("httr2::req_perform1", req, resend_count = resend_count)
+  }
   the$last_request <- req
   the$last_response <- NULL
   signal(class = "httr2_perform")

@@ -53,6 +53,10 @@ req_perform_connection <- function(req, blocking = TRUE, verbosity = NULL) {
   check_bool(blocking)
   # verbosity checked in req_verbosity_connection
 
+  if (has_otel()) {
+    req <- otel_req_start("httr2::req_perform_connection", req)
+  }
+
   req <- req_verbosity_connection(req, verbosity %||% httr2_verbosity())
   req_prep <- req_prepare(req)
   handle <- req_handle(req_prep)
@@ -71,7 +75,13 @@ req_perform_connection <- function(req, blocking = TRUE, verbosity = NULL) {
     if (!is.null(resp)) {
       close(resp)
     }
-    resp <- req_perform_connection1(req, handle, blocking = blocking)
+
+    resp <- req_perform_connection1(
+      req,
+      handle,
+      blocking = blocking,
+      tries = tries + 1
+    )
 
     if (retry_is_transient(req, resp)) {
       tries <- tries + 1
@@ -124,7 +134,14 @@ req_verbosity_connection <- function(
   req
 }
 
-req_perform_connection1 <- function(req, handle, blocking = TRUE) {
+req_perform_connection1 <- function(req, handle, blocking = TRUE, tries = 1L) {
+  if (has_otel()) {
+    req$otel_span <- otel_req_start(
+      "httr2::req_perform_connection1",
+      req,
+      resend_count = tries
+    )
+  }
   the$last_request <- req
   the$last_response <- NULL
   signal(class = "httr2_perform_connection")

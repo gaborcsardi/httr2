@@ -53,6 +53,13 @@ PooledRequest <- R6Class(
       }
 
       private$req_prep <- req_prepare(req)
+      if (has_otel()) {
+        private$req_prep <- otel_pooled_req_start(
+          "httr2::pooled_request",
+          private$req_prep
+        )
+      }
+
       private$handle <- req_handle(private$req_prep)
 
       curl::multi_add(
@@ -102,6 +109,10 @@ PooledRequest <- R6Class(
 
       resp <- create_response(self$req, curl_data, body)
       resp <- cache_post_fetch(self$req, resp, path = private$path)
+      if (has_otel()) {
+        otel_handle_resp(private$req_prep, resp)
+        private$req_prep$otel_span$end()
+      }
 
       if (error_is_error(self$req, resp)) {
         cnd <- resp_failure_cnd(self$req, resp, error_call = private$error_call)
@@ -115,6 +126,10 @@ PooledRequest <- R6Class(
     fail = function(msg) {
       private$handle <- NULL
       req_completed(private$req_prep)
+      if (has_otel()) {
+        otel_handle_resp(private$req_prep, msg)
+        private$req_prep$otel_span$end()
+      }
 
       error_class <- setdiff(class(msg), "character")
       curl_error <- error_cnd(message = msg, class = error_class, call = NULL)
