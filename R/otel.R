@@ -1,3 +1,5 @@
+otel_tracer_name <- "org.r-lib.httr2"
+
 has_otel <- function() {
   env_cache(the, "has_otel", is_installed("otel")) && otel::is_tracing()
 }
